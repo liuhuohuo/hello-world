@@ -1,0 +1,2977 @@
+#coding:utf-8
+#!bin/env/ python
+
+import pdb
+import commands
+import json
+import unittest
+import random
+import time
+import datetime
+
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
+
+global_image = '/home/work/1.png'
+global_audio = '/home/work/bgMusic/HushabyLady-DimensionBucket.mp3'
+global_openscreen = '/home/work/openscreen/ios_750x1334.png'
+exec_curl = ''
+
+class testclass(unittest.TestCase):
+    def setUp(self):
+        pass
+
+    def tearDown(self):
+        pass
+
+    def send_request_post(self, query_dict, para_url, token = '', flag = 0, client = 1, ua = ''):
+	global exec_curl
+        try:
+	    if flag == 0:
+	        para_url = "http://127.0.0.1:8080/api/v30" + para_url
+	    elif flag == 1:
+		para_url = "http://127.0.0.1:8090/oms/v1" + para_url
+            elif flag ==2:
+                para_url = "http://127.0.0.1:8080/web-callback/v1" + para_url
+            cmd = "curl -s -H 'ua:%s' -H '_c:%s' -H '%s' -d '%s' '%s' 2>/dev/null" % (ua, str(client), token, query_dict, para_url)
+	    exec_curl = cmd
+            print cmd
+            res = commands.getoutput(cmd)
+            return res
+        except:
+            print ("[*****error******] '%s' requests error" % para_url)
+
+    def send_request_post_image(self, query_dict, para_url, token = '', pic = '', flag = 0, client = 1, ua = ''):
+	global exec_curl
+        try:
+	    if flag == 0:
+                para_url = "http://127.0.0.1:8080/api/v30%s?%s" % (para_url, query_dict)
+            elif flag == 1:
+                para_url = "http://127.0.0.1:8090/oms/v1%s?%s" % (para_url, query_dict)
+            cmd = "curl -s -H 'ua:%s' -H '_c:%s' -H '%s' -F '%s' '%s' 2>/dev/null" % (ua, str(client), token, pic, para_url)
+            print cmd
+	    exec_curl = cmd
+            res = commands.getoutput(cmd)
+            return res
+        except:
+            print ("[*****error******] '%s' requests error" % para_url)
+
+    def send_request_get(self, para_url, token = '', flag = 0, client = 1, ua = ''):
+	global exec_curl
+        try:
+	    if flag == 0:
+                para_url = "http://127.0.0.1:8080/api/v30" + para_url
+            elif flag == 1:
+                para_url = "http://127.0.0.1:8090/oms/v1" + para_url
+            elif flag == 2:
+                para_url = "http://127.0.0.1:8080/web-callback/v1" + para_url
+            cmd = "curl -s -H 'ua:%s' -H '%s' -H '_c:%s' '%s'" % (ua, token, str(client), para_url)
+	    exec_curl = cmd
+            print cmd
+            res = commands.getoutput(cmd)
+            return res
+        except:
+            print ("[*****error******] '%s' requests error" % para_url)
+
+    def assert_equal(self, lhs, rhs, errmsg=None):
+	#time.sleep(0.1)
+        if errmsg is None:
+            errmsg = "%s doesn't equal to: %s" % (lhs, rhs)
+        if lhs != rhs:
+            raise AssertionError, exec_curl
+
+    def mysql_execute(self, sql, host='127.0.0.1', port='3306', user='root', password='uxin.com', database='uxinlive'):
+        cmd = "mysql -h%s -P%s -u%s -p%s --database=%s -e\"%s\"" % (host, port, user, password, database, sql)
+        print cmd
+        res = commands.getoutput(cmd)
+        return res
+
+    def redis_batch_del_execute(self, keyword, host='127.0.0.1', port='6379', password='uxin001'):
+        cmd = "redis-cli -h %s -p %s -a %s keys \"*%s*\"|xargs redis-cli -h %s -p %s -a %s del" % (host, port, password, keyword, host, port, password)
+        print cmd
+        res = commands.getoutput(cmd)
+        return res        
+
+
+    def redis_execute(self, keyword, host='127.0.0.1', port='6379', password='uxin001'):
+        cmd = "redis-cli -h %s -p %s -a %s %s" % (host, port, password, keyword)
+        print cmd
+        res = commands.getoutput(cmd)
+        return res
+
+    def user_modify_account(self, uid, add_gold=0, add_diamond=1000, add_amount=100, add_total_diamond=1000, add_total_amount=100):
+        sql_modify_account = "update account_balance set gold=gold+%s,diamond=diamond+%s,amount=amount+%s,total_diamond=total_diamond+%s,total_amount=total_amount+%s where uid=%s" % (add_gold, add_diamond, add_amount, add_total_diamond, add_total_amount, uid)
+        self.mysql_execute(sql_modify_account)
+        redis_delete_item = "del balance_item_%s" % (uid)
+        redis_delete_gold = "del balance_account_gold_%s" % (uid)
+        redis_delete_diamond = "del balance_account_diamond_%s" % (uid)
+        redis_delete_amount = "del balance_account_rmb_%s" % (uid)
+        self.redis_execute(redis_delete_item)
+        self.redis_execute(redis_delete_gold)
+        self.redis_execute(redis_delete_diamond)
+        self.redis_execute(redis_delete_amount)
+
+    def end_all_events(self):
+        #结束所有在有效期内的活动
+        query_url = "/room/event/all/get"
+        end_url = "/room/event/end"
+        tmp = self.send_request_get(query_url, flag = 1)
+        res = json.loads(tmp)
+        if len(res['b'])!=0:
+           for event in res['b']:
+               event_id=event['eventId']
+               query_dict = "eventId=%s" % (event_id)
+               tmp = self.send_request_post(query_dict, end_url, flag = 1)
+               res1 = json.loads(tmp)
+               self.assert_equal(res1['h']['code'], 200)
+               self.assert_equal(res1['h']['msg'], '操作成功')
+
+    def get_datetime(self, time_dur=0):
+        #返回13位时间戳， time_dur 单位：小时
+        now = time.time()
+        res_time = now*1000 + int(time_dur)*60*60*1000
+        return '%d' % res_time
+
+    def get_date_YMD(self, day_dur=0):
+        #返回年月日日期格式，day_dur 单位：天
+        now = datetime.datetime.now()
+        day_date = now + datetime.timedelta(day_dur)
+        res_date = day_date.strftime('%Y%m%d')
+        return res_date
+
+    def get_token(self, mobile=18911411029):
+	cmd = "curl  -i  -H '_c:1' -s 'http://127.0.0.1:8080/api/v1/user/cellPhoneLogin' -d 'mobile=%s&code=1234'|grep x-auth-token" % mobile
+	res = commands.getoutput(cmd)
+	token_split = res[:-1].split(": ") # 不知道为啥有个换行符
+        res = token_split[0] + ":" + token_split[1]
+        return res
+	
+    def get_uid(self, mobile=18911411029):
+	code = 1234
+	cmd_uid = "curl -s -H '_c:1' 'http://127.0.0.1:8080/api/v1/user/cellPhoneLogin' -d 'mobile=%s&code=%s'|awk -F 'id\":' '{print $2}'|awk -F ',' '{print $1}'" % (mobile, code)
+        res_uid = commands.getoutput(cmd_uid)
+        return res_uid
+
+    def get_name(self, mobile=18911411029):
+        code = 1234
+        tmp = "curl -s -H '_c:1' 'http://127.0.0.1:8080/api/v1/user/cellPhoneLogin' -d 'mobile=%s&code=%s'" % (mobile, code)
+        res_name = commands.getoutput(tmp)
+	res = json.loads(res_name)
+	name = res['b']['nickname']
+        return name
+	
+    def get_goodsId(self):
+	#获取礼物列表
+        para_url = "/goods/list?typeId=1"
+        token = self.get_token()
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        gift_id = res['b']['list'][0]['id']
+	return gift_id
+
+    def end_living(self, uid, token):
+        #关闭正在直播的直播间
+        para_url = "/room/queryLivingRoomByUid?uid=%s" % (uid)
+        end_living = "/room/end"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        if len(res['b'])!=0:
+            roomId = res['b']['roomId']
+            query_dict = "roomId=%s" % (roomId)
+            tmp = self.send_request_post(query_dict, end_living, token = token)
+            res1 = json.loads(tmp)
+            self.assert_equal(res1['h']['code'], 200)
+            self.assert_equal(res1['h']['msg'], '操作成功')
+    
+    def add_big_goods_if_not(self):
+        #添加大额充值套餐如果没有的话
+        typeId = 8
+        para_url = "/goods/list?typeId=%s" % (typeId)
+        add_url = "/goods/create"
+        query_dict = "typeId=%s&price=1&golds=100000&addGolds=3000&name=大额代充套餐&&sizeType=1" % (typeId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        if len(res['b']['list'])==0:
+            tmp = self.send_request_post(query_dict, add_url, flag = 1)
+            res1 = json.loads(tmp)
+            self.assert_equal(res1['h']['code'], 200)
+            self.assert_equal(res1['h']['msg'], '操作成功')
+            big_goodsId = res1['b']['id']
+        else:
+            big_goodsId = res['b']['list'][0]['id']
+        return big_goodsId
+
+    def test_weibo2hongdou_recommend(self):
+        para_url = "/weibo/recommend/room"
+        query_dict = "object_id=2248388001:965110109535469577&source=2896435245&sign=963d82e95d"
+        tmp = self.send_request_post(query_dict, para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['code'], 10000)
+        self.assert_equal(res['msg'], 'success')
+
+    def test_user_sendValidateCode(self):
+        para_url = "/user/sendValidateCode"
+        query_dict = "mobile=18911411029"
+        tmp = self.send_request_post(query_dict, para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_user_txSign_refresh(self):
+	token = self.get_token()
+        para_url = "/user/txSign/refresh"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_user_cellPhoneLogin(self):
+        #手机号登陆
+        para_url = "/user/cellPhoneLogin"
+        query_dict = "mobile=18911411029&code=1234"
+        tmp = self.send_request_post(query_dict, para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        uid = res['b']['id']
+        #用户踢线－oms
+        para_url = "/user/kickOut"
+        query_dict = "uids=%s" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #手机号首次注册
+        mobile = random.randint(10000000000,19999999999)
+        para_url = "/user/cellPhoneLogin"
+        query_dict = "mobile=%s&code=1234" % (mobile)
+        tmp = self.send_request_post(query_dict, para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+    
+    def test_user_microblogLogin_SDK(self):
+        #非V7接口
+        random_name = str(random.randint(1000,10000))
+        random_outer = random.randint(1000000000,10000000000)
+        para_url = "/user/microblogLogin"
+        query_dict = "type=1&isSdk=1&nickname=凡一草%s&outerId=%s" % (random_name, random_outer)
+        tmp = self.send_request_post(query_dict, para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #非V7接口-传大V认证字段
+        random_name = str(random.randint(1000,10000))
+        random_outer = str(random.randint(1000000000,10000000000))
+        para_url = "/user/microblogLogin"
+        query_dict = "type=1&isSdk=1&nickname=微博主播%s&headPortraitUrl=http://tvax2.sinaimg.cn/crop.0.0.996.996.180/c154fbdbly8fdnqaxtpeoj20ro0rpdhg.jpg&gender=2&outerId=%s&verifiedType=0&verifiedTypeExt=1" % (random_name, random_outer)
+        tmp = self.send_request_post(query_dict, para_url)
+	print tmp
+        res = json.loads(tmp)
+        print res
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isAnchor'], 1)
+        #非V7接口-传普通用户字段
+        random_name = str(random.randint(1000,10000))
+        random_outer = str(random.randint(1000000000,10000000000))
+        para_url = "/user/microblogLogin"
+        query_dict = "type=1&isSdk=1&nickname=微博主播%s&headPortraitUrl=http://tvax2.sinaimg.cn/crop.0.0.996.996.180/c154fbdbly8fdnqaxtpeoj20ro0rpdhg.jpg&gender=2&outerId=%s&verifiedType=-1&verifiedTypeExt=1" % (random_name, random_outer)
+        tmp = self.send_request_post(query_dict, para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isAnchor'], 0)
+
+    def test_user_bindGT(self):
+	para_url = "/user/bindGt?cid=14995e92c5ddeec7ed0fbfcc5772a75f"
+	token = self.get_token()
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_pia_xiu(self):
+        #创建话题－敏感词
+        uid =self.get_uid()
+        token = self.get_token()
+        theme_title = "话题学平"
+        theme_introduce = "我是话题内容简介"
+        para_url = "/theme/create"
+        query_dict = "title=%s&introduce=%s&createUid=%s" % (theme_title, theme_introduce, uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 41)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容')
+        #创建话题－正常话题
+        theme_title = "我是话题"
+        theme_introduce = "我是话题内容简介"
+        para_url = "/theme/create"
+        query_dict = "title=%s&introduce=%s&createUid=%s" % (theme_title, theme_introduce, uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        themeId = res['b']['themeResp']['id']
+        #发布话题
+        para_url = "/theme/publish"
+        query_dict = "themeId=%s&type=1" % (themeId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #创建素材
+        para_url = "/material/create"
+        query_dict = "createUid=%s&title=我是素材&playUrl=你若愿陪我朝夕相处.mp4&videoName=你若愿陪我朝夕相处.mp4&bgmName=你若愿陪我朝夕相处.mp3&captionName=你若愿陪我朝夕相处.srt&resUrl=你若愿陪我朝夕相处.zip&type=1&coverPic=你若愿陪我朝夕相处.JPG" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        materialId = res['b']['id']
+        #创建素材-敏感词
+        para_url = "/material/create"
+        query_dict = "createUid=%s&title=我是学平素材&playUrl=你若愿陪我朝夕相处.mp4&videoName=你若愿陪我朝夕相处.mp4&bgmName=你若愿陪我朝夕相处.mp3&captionName=你若愿陪我朝夕相处.srt&resUrl=你若愿陪我朝夕相处.zip&type=1&coverPic=你若愿陪我朝夕相处.JPG" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 41)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容')
+        #给话题添加素材
+        para_url = "/theme/material/set"
+        query_dict = "themeId=%s&materialId=%s&type=1" % (themeId, materialId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #创建pia秀
+        playUrl = "theme/2017-10-27/19015735746581509075636540833942.mp4"
+        para_url = "/theme/content/create"
+        theme_content_title = "就好"
+        query_dict = "title=%s&themeId=%s&materialId=%s&playUrl=%s&duration=20&format=2" % (theme_content_title, themeId, materialId, playUrl)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        piaId = res['b']['id']
+        #创建pia秀-敏感词
+        playUrl = "theme/2017-10-27/19015735746581509075636540833942.mp4"
+        para_url = "/theme/content/create"
+        theme_content_title = "平惯就好"
+        query_dict = "title=%s&themeId=%s&materialId=%s&playUrl=%s&duration=20&format=2" % (theme_content_title, themeId, materialId, playUrl)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 41)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容')
+        #创建pia秀评论
+        content = "一般评论"
+        para_url = "/comment/write"
+        query_dict = "commentType=1&rootId=%s&rootType=4&parentId=%s&parentType=4&title=话题&content=%s&danmakuTime=200" % (piaId, piaId, content)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #创建pia秀评论-敏感词
+        content = "好好学平"
+        para_url = "/comment/write"
+        query_dict = "commentType=1&rootId=%s&rootType=4&parentId=%s&parentType=4&title=话题&content=%s&danmakuTime=200" % (piaId, piaId, content)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 300107)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容') 
+        #删除话题theme
+        para_url = "/theme/delete"
+        query_dict = "id=%s" % (themeId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')  
+        #删除素材
+        para_url = "/material/delete"
+        query_dict = "id=%s" % (materialId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_Auser_queryUserInfo(self):
+	#设置用户信息
+	para_url = "/user/setUserInfo"
+	pic = 'multipartFile=@%s' % (global_image)
+	rand = random.uniform(10, 20)
+        query_dict = "introduction=myintroduce&nickname=mynickname%s&gender=1" % (rand)
+        query_dict1 = "introduction=myintroduce123qweasd&nickname=136myname%s&gender=2" % (rand)
+        query_dict2 = "introduction=平%s" % (rand)
+        query_dict3 = "nickname=平%s" % (rand)
+        uid =self.get_uid()
+        token = self.get_token()
+        token1 = self.get_token(mobile = 13612120001)
+        tmp = self.send_request_post_image(query_dict, para_url, token = token, pic = pic)
+        tmp1 = self.send_request_post_image(query_dict1, para_url, token = token1, pic = pic)
+        tmp2 = self.send_request_post_image(query_dict2, para_url, token = token1, pic = pic)
+        tmp3 = self.send_request_post_image(query_dict3, para_url, token = token1, pic = pic)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        res1 = json.loads(tmp1)
+        self.assert_equal(res1['h']['code'], 200)
+        self.assert_equal(res1['h']['msg'], '操作成功')
+	res2 = json.loads(tmp2)
+        #self.assert_equal(res2['h']['code'], 41)
+        #self.assert_equal(res2['h']['msg'], '输入信息中含有不符合法律法规的内容')
+	#查询用户信息
+        para_url = "/user/queryUserInfo"
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['nickname'], 'mynickname' + str(rand))
+        #查询用户信息for H5
+        para_url = "/user/h5/userinfo/get?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #保存我页面背景图
+        backPic = "18612753530901493008235561415658.png"
+        para_url = "/user/update/background/pic"
+        query_dict = "bgpic=%s" % (backPic)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_userrelation_follow(self):
+	mobile = random.randint(10000000000,19999999999)
+        #加关注
+        para_url = "/userrelation/follow"
+	uid1 = self.get_uid(mobile = 18512069261)
+	uid2 = self.get_uid(mobile = mobile)
+	token = self.get_token(mobile = 18512069261)
+        query_dict = "fromUid=%s&toUid=%s" % (uid1, uid2)
+	tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#关注列表
+	para_url = "/userrelation/getfollows?uid=%s" % (uid1)
+	tmp = self.send_request_get(para_url, token = token)	
+	res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['user']['id'], int(uid2))
+	#粉丝列表
+	para_url = "/userrelation/getfollowers?uid=%s" % (uid2)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['user']['id'], int(uid1))
+	#关注关系
+	para_url = "/userrelation/isfollow"
+        query_dict = "fromUid=%s&toUid=%s" % (uid1, uid2)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isFollow'], True)
+	#取消关注
+	para_url = "/userrelation/unfollow"
+        query_dict = "fromUid=%s&toUid=%s" % (uid1, uid2)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#关注关系
+        para_url = "/userrelation/isfollow"
+        query_dict = "fromUid=%s&toUid=%s" % (uid1, uid2)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isFollow'], False)
+
+    def test_logout(self):
+        para_url1 = "/user/bindGt?cid=14995e92c5ddeec7ed0fbfcc5772a75f"
+        para_url2 = "/user/logout"
+        token = self.get_token()
+	query_dict = ''
+        tmp = self.send_request_post(query_dict, para_url2, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	tmp = self.send_request_get(para_url1, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 10)
+        self.assert_equal(res['h']['msg'], '用户鉴权失败')
+
+    def test_configuration_query(self):
+        #系统版本配置信息
+        para_url = "/configuration/query"
+        token = self.get_token()
+        query_dict = ''
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #客户端内获取标签列表
+        para_url = "/configuration/personal/query"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #给微博用的获取标签列表
+        para_url = "/configuration/tags/query"
+        tmp = self.send_request_get(para_url, client = 13)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_account_balance(self):
+        para_url = "/account/balance"
+	token = self.get_token()
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	
+    def test_room_globalTimeline(self):
+	#实时流－所有
+        para_url = "/room/globalTimeline"
+        token = self.get_token()
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#预发布
+	para_url = "/room/preview_timeline?uid=1234"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#首页信息
+	para_url = "/room/homepage"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#实时流
+        para_url = "/room/homeTimeline?pageNo=1&pageSize=20"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #首页推荐流
+        para_url = "/room/timeline/recommend/get?pageNo=1&pageSize=10"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #推荐流for H5
+        para_url = "/room/h5/timeline/recommend/get?pageNo=2&pageSize=10"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_channel_search(self):
+        token = self.get_token()
+        #首页信息－H5不传token
+        para_url = "/room/homepage"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索预告－默认-客户端传token
+        para_url = "/room/channel/preview?type=0&tag=0"
+        token = self.get_token()
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索预告－默认-H5不传token
+        para_url = "/room/channel/previewH5?type=0&tag=0"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索预告－分页-客户端传token
+        para_url = "/room/channel/preview?type=1&pageNo=1&pageSize=5&tag=0"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索预告－分页-H5不传token
+        para_url = "/room/channel/previewH5?type=1&pageNo=2&pageSize=5&tag=0"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索直播间－分页-客户端传token
+        para_url = "/room/channel/timeline?pageNo=1&pageSize=5&tag=0"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索直播间－分页-H5不传token
+        para_url = "/room/channel/timelineH5?pageNo=2&pageSize=5&tag=0"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索关注预告－默认-客户端传token
+        para_url = "/room/channel/preview?type=0&tag=11"
+        token = self.get_token()
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索关注预告－分页-客户端传token
+        para_url = "/room/channel/preview?type=1&pageNo=1&pageSize=5&tag=11"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #搜索关注直播间－分页-客户端传token
+        para_url = "/room/channel/timeline?pageNo=1&pageSize=5&tag=11"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_user_search(self):
+        token = self.get_token()
+        #搜索用户－需要传token
+        para_url = "/search/all?type=1&pageNo=1&pageSize=10&keyWord=安卓"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        para_url = "/search/all?type=1&pageNo=2&pageSize=10&keyWord=安卓"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	para_url = "/search/all?type=1&pageNo=1&pageSize=10&keyWord=平"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 42)
+        #self.assert_equal(res['h']['msg'], '根据相关法律法规，搜索结果未予显示')
+	para_url = "/search/all?type=2&pageNo=1&pageSize=10&keyWord=平"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 42)
+        #self.assert_equal(res['h']['msg'], '根据相关法律法规，搜索结果未予显示')
+	para_url = "/search/all?type=3&pageNo=1&pageSize=10&keyWord=平"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 42)
+        #self.assert_equal(res['h']['msg'], '根据相关法律法规，搜索结果未予显示')
+    
+    def test_goods_list(self):
+	#获取礼物列表
+	para_url = "/goods/list?typeId=1"
+        token = self.get_token()
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	gift_id = res['b']['list'][0]['id']
+        #获取充值列表
+        para_url = "/goods/list?typeId=2"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	gold_id = res['b']['list'][0]['id']
+        #查询单个礼物商品
+	para_url = "/goods/queryById?id=%s" % (gift_id)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['id'], gift_id)
+        #查询单个充值商品
+        para_url = "/goods/queryById?id=%s" % (gold_id)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['id'], gold_id)
+	
+    def test_room_create(self):
+	#创建直播间
+        uid = self.get_uid()
+	token = self.get_token()
+        para_url = "/room/create"
+        uid_audience = self.get_uid(mobile = 13612120001)
+        token_audience = self.get_token(mobile = 13612120001)
+        self.end_living(uid, token)
+        query_dict = ""
+        query_dict1 = "title=平"
+        query_dict2 = "introduce=平"
+        tmp1 = self.send_request_post(query_dict1, para_url, token = token)
+        tmp2 = self.send_request_post(query_dict2, para_url, token = token)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+	res = json.loads(tmp1)
+        #self.assert_equal(res['h']['code'], 41)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容')
+	res = json.loads(tmp2)
+        #self.assert_equal(res['h']['code'], 41)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容')
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')	
+        roomId = res['b']['roomId']
+        roomTitle = res['b']['title']
+        actualStartTime = res['b']['liveStartTime']
+        #开播时同步媒体服务器
+        para_url = "/dispatch/cgi/live/proxy"
+        query_dict = "data=ChI5NzgzOTgxODQzNjU2MjEyNTAQH&op=201&pass=e1bf460ea16681ae5a14ea080f4adeeb&uid=%s" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播直播未开始分享文案
+        para_url = "/room/share?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #听众直播未开始分享文案
+        para_url = "/room/share?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #添加预告直播间标签
+        para_url = "/room/tags/update"
+        query_dict = "roomId=%s&tags=0,1,3,5,7" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询预告直播间标签
+        para_url = "/room/tags/get?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #开始直播
+	para_url = "/room/start"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #添加分类置顶
+        para_url = "/room/top/add"
+        query_dict = "roomId=%s&tag=0&sequence=1" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询置顶直播间
+        para_url = "/room/top/get?tag=0"
+        tmp = self.send_request_get(para_url, token = token_audience, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #更改直播间置顶顺序
+        para_url = "/room/top/sequence/update"
+        query_dict = "roomId=%s&tag=0&sequence=3" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #取消置顶直播间
+        para_url = "/room/top/del"
+        query_dict = "roomId=%s&tag=0" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播设置连麦开关为关
+        para_url = "/room/communicate/status"
+        query_dict = "roomId=%s&status=0" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播设置连麦开关为开
+        para_url = "/room/communicate/status"
+        query_dict = "roomId=%s&status=1" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播设置连麦时长和价格
+        maxDuration = 30
+        minAmount = 1
+        para_url = "/room/communicate/floor/set"
+        query_dict = "roomId=%s&maxDuration=%s&minAmount=%s" % (roomId, maxDuration, minAmount)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询连麦最低价格
+        para_url = "/room/communicate/floor/get?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['maxDuration'], maxDuration)
+        self.assert_equal(res['b']['minAmount'], minAmount*100)
+        #修改直播间的连麦价格－OMS
+        maxDuration_oms = 20
+        minAmount_oms = 0
+        para_url = "/room/communicate/floor/set"
+        query_dict = "roomId=%s&uid=%s&maxDuration=%s&minAmount=%s" % (roomId, uid, maxDuration_oms, minAmount_oms)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询连麦最低价格
+        para_url = "/room/communicate/floor/get?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['maxDuration'], maxDuration_oms)
+        self.assert_equal(res['b']['minAmount'], minAmount_oms)
+        #听众申请连麦
+        para_url = "/room/communicate/apply"
+        query_dict = "roomId=%s&amount=0" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        communicateId = res['b']['communicateId']
+        #连麦者设置连麦理由
+        reason = "主播来连我"
+        para_url = "/room/communicate/reason/set"
+        query_dict = "communicateId=%s&reason=%s" % (communicateId, reason)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #连麦者设置连麦理由－敏感词
+        reason = "主播来连我平"
+        para_url = "/room/communicate/reason/set"
+        query_dict = "communicateId=%s&reason=%s" % (communicateId, reason)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 41)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容')
+        #查询连麦列表
+        para_url = "/room/communicate/query?roomId=%s&type=1&pageSize=5&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']), uid_audience)
+        self.assert_equal(res['b']['data'][0]['status'], 0)
+        #移除连麦－个人uid
+        para_url = "/room/communicate/cancel"
+        query_dict = "roomId=%s&opt=1&uid=%s" % (roomId, uid_audience)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #听众申请连麦
+        para_url = "/room/communicate/apply"
+        query_dict = "roomId=%s&amount=0" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        communicateId = res['b']['communicateId']
+        #听众连麦成功回调
+        para_url = "/media/state/notify"
+        query_dict = "roomId=%s&uid=%s&role=0&status=0&code=0" % (roomId, uid_audience)
+        tmp = self.send_request_post(query_dict, para_url, flag = 2)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询连麦列表
+        para_url = "/room/communicate/query?roomId=%s&type=0&pageSize=5&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']), uid_audience)
+        self.assert_equal(res['b']['data'][0]['status'], 2)
+        #听众挂麦成功回调
+        para_url = "/media/state/notify"
+        query_dict = "roomId=%s&uid=%s&role=0&status=1&code=0" % (roomId, uid_audience)
+        tmp = self.send_request_post(query_dict, para_url, flag = 2)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询连麦列表
+        para_url = "/room/communicate/query?roomId=%s&type=0&pageSize=5&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']), uid_audience)
+        self.assert_equal(res['b']['data'][0]['status'], 1)
+        #听众申请连麦
+        para_url = "/room/communicate/apply"
+        query_dict = "roomId=%s&amount=0" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        communicateId = res['b']['communicateId']
+        #移除连麦申请-OMS
+        para_url = "/room/communicate/cancel"
+        query_dict = "roomId=%s&opt=1&uid=%s&id=%s" % (roomId, uid_audience, communicateId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #移除连麦－移除所有
+        para_url = "/room/communicate/cancel"
+        query_dict = "roomId=%s&opt=2" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播禁言
+        para_url = "/userforbid/addForbidUser"
+        uid_forbid = self.get_uid(mobile = 13612120002)
+        query_dict = "roomId=%s&uid=%s" % (roomId, uid_forbid)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询某个直播间用户是否被禁言
+        para_url = "/userforbid/checkIsForbid"
+        query_dict = "roomId=%s&uid=%s" % (roomId, uid_forbid)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isForbid'],True)
+        #查询用户禁言列表
+        para_url = "/userforbid/queryForbidUserList"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']),uid_forbid)
+        #主播取消禁言
+        para_url = "/userforbid/removeForbidUser"
+        query_dict = "uid=%s" % (uid_forbid)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #设置为推荐直播间
+        para_url = "/room/recommend"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #更换直播间封面
+        para_url = "/room/setCover"
+        pic = 'cover=@%s' % (global_image)
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post_image(query_dict, para_url, pic = pic, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播直播中分享文案
+        para_url = "/room/share?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #听众直播中分享文案
+        para_url = "/room/share?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询正在直播中的直播间
+        para_url = "/room/queryLivingRoomByUid"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['roomId'], roomId)
+	#获取直播间守护榜
+	para_url = "/statistics/getSingleRoomRankList?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#获取豆咖守护榜
+        para_url = "/statistics/getAnchorRankList?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#portal修改直播间信息
+	para_url = "/room/update"
+        query_dict = "roomId=%s&introduce=myintroduce_modified" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#time.sleep(200)
+        #portal修改直播间信息-敏感词
+        para_url = "/room/update"
+        query_dict = "roomId=%s&introduce=myintroduce_modified学平好" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 41)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容')
+        #添加直播中直播间标签
+        para_url = "/room/tags/update"
+        query_dict = "roomId=%s&tags=0,2,3,5,7" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播中直播间标签
+        para_url = "/room/tags/get?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #创建竞价问题
+        question_uid = self.get_uid(mobile = 13612120001)
+        question_nickname = self.get_name(mobile = 13612120001)
+        answer_nickname = self.get_name()
+        answer_uid = self.get_uid()
+        token = self.get_token()
+        para_url = "/room/question/create"
+        query_dict = "roomId=%s&roomTitle=%s&answerUid=%s&answerNickname=%s&questionUid=%s&questionNickname=%s&amount=200&content=000111" % (roomId, roomTitle, answer_uid, answer_nickname, question_uid, question_nickname)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+	print tmp
+	print '==========================='
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        question_id = res['b']['id']
+        #创建竞价问题-敏感词
+        para_url = "/room/question/create"
+        query_dict = "roomId=%s&roomTitle=%s&answerUid=%s&answerNickname=%s&questionUid=%s&questionNickname=%s&amount=200&content=000111平大大好" % (roomId, roomTitle, answer_uid, answer_nickname, question_uid, question_nickname)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 41)
+        #self.assert_equal(res['h']['msg'], '输入信息中含有不符合法律法规的内容')
+        #删除竞价问题-oms
+        para_url = "/room/question/delete"
+        query_dict = "questionId=%s" % (question_id)
+        tmp = self.send_request_post(query_dict,para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #插入数据库一条问题信息
+        question_id = "9000090926000%s" % (random.randint(10000,99999)) 
+        video_url = "http://hrslive.hongrenshuo.com.cn/record/hrs/1007255013065490438.test"
+        insert_question = "insert into question_info VALUES (%s,%s,'%s',%s,'%s',%s,'%s',%s,NULL,200,'124rrrddd',1,0,%s,NULL,0,'%s')" % (question_id, roomId, roomTitle, answer_uid, answer_nickname, question_uid, question_nickname, self.get_datetime(),  self.get_datetime(), video_url )
+        self.mysql_execute(insert_question)
+        time.sleep(1)
+        #结束问题
+        para_url = "/room/question/end"
+        query_dict = "questionId=%s" % (question_id)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #竞价问题结束打点
+        para_url = "/room/question/end/time"
+        query_dict = "questionId=%s" % (question_id)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功') 
+        #结束直播
+	    para_url = "/room/end"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #直播间结束媒体回调
+        para_url = "/media/state/notify"
+        query_dict = "roomId=%s&uid=%s&role=1&status=3&code=3" % (roomId, uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 2)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #修改直播间阅读数
+        para_url = "/room/update_watch_num"
+        query_dict = "roomId=%s&watchNum=1000" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #oms修改直播间信息
+        para_url = "/room/update"
+        query_dict = "roomId=%s&title=my_first_room_title&introduce=myintroduce_modified_again" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #oms根据roomId搜索直播间
+        para_url = "/room/query?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #oms根据title搜索直播间
+        para_url = "/room/query?title=my_first_room_title"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #oms根据nickname搜索直播间-分页
+        nickname = self.get_name()
+        para_url = "/room/query?nickname=%s&pageNo=1&pageSize=5" % (nickname)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #oms根据直播间status搜索直播间-分页
+        para_url = "/room/query?statusIndex=10&pageNo=2&pageSize=5"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播直播结束回放状态分享文案
+        para_url = "/room/share?roomId=%s" % (roomId)
+        token = self.get_token()
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #听众直播结束回放状态分享文案
+        token_audience = self.get_token(mobile = 13612120001)
+        para_url = "/room/share?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #添加回放直播间标签
+        para_url = "/room/tags/update"
+        query_dict = "roomId=%s&tags=0,1,3,7,9" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询回放直播间标签
+        para_url = "/room/tags/get?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #修改直播间回放文件地址
+        para_url = "/room/playbackAddress/modify"
+        query_dict = "address=http://hrslive-keane.oss-cn-hangzhou.aliyuncs.com/record/hrs/92025424419015&roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #获取直播间回放文件地址
+        para_url = "/room/playbackAddress/get?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #清除回放地址
+        para_url = "/room/vediourl/update"
+        query_dict = "roomId=%s&opFlag=1" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #修改直播间回放文件地址
+        para_url = "/room/playbackAddress/modify"
+        query_dict = "address=http://hrslive-keane.oss-cn-hangzhou.aliyuncs.com/record/hrs/92025424419015&roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #获取直播间人数计数
+	para_url = "/room/audience/count/get?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#获取主播直播间列表－全部
+        para_url = "/room/liveList?cursor=0"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #self.assert_equal(res['b']['data'][0]['roomId'], roomId)
+        #获取主播直播间列表－预告
+        para_url = "/room/liveList?status=1&cursor=0"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #获取主播直播间列表－直播中
+        para_url = "/room/liveList?status=4&cursor=0"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #获取主播直播间列表－回放
+        para_url = "/room/liveList?status=10&cursor=0"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #获取主播直播间列表for h5
+        para_url = "/room/h5/liveList/get?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #self.assert_equal(res['b']['data'][0]['roomId'], roomId)
+        #设置直播间竞价问题最低价格
+        para_url = "/room/question/floor/price"
+        query_dict = "roomId=%s&price=2" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播间竞价问题最低价格
+        para_url = "/room/question/floor/price/query"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播间全部问题
+        para_url = "/room/question/query?optType=2&roomId=%s&queryType=1&pageSize=2&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#查询直播间全部问题-oms
+        para_url = "/room/question/query?optType=2&roomId=%s&queryType=1&pageSize=2&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播间未回答问题
+        para_url = "/room/question/query?optType=2&roomId=%s&queryType=3&pageSize=2&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播间未回答问题-oms
+        para_url = "/room/question/query?optType=2&roomId=%s&queryType=3&pageSize=2&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播间已回答问题
+        para_url = "/room/question/query?optType=2&roomId=%s&queryType=2&pageSize=2&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播间已回答问题-oms
+        para_url = "/room/question/query?optType=2&roomId=%s&queryType=2&pageSize=2&pageNo=1" % (roomId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的回答问题
+        para_url = "/room/question/query?optType=3&queryType=2&pageSize=2&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的提问全部问题
+        token = self.get_token(mobile = 13612120001)
+        para_url = "/room/question/query?optType=1&queryType=1&pageSize=2&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的提问待回答
+        para_url = "/room/question/query?optType=1&queryType=3&pageSize=2&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的提问已回答
+        para_url = "/room/question/query?optType=1&queryType=2&pageSize=2&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的提问已退款
+        para_url = "/room/question/query?optType=1&queryType=4&pageSize=2&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的提问全部问题-oms
+        uid = self.get_uid(mobile = 13612120001)
+        para_url = "/room/question/query?uid=%s&optType=1&queryType=1&pageSize=2&pageNo=1" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的提问待回答-oms
+        para_url = "/room/question/query?uid=%s&optType=1&queryType=3&pageSize=2&pageNo=1" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的提问已回答-oms
+        para_url = "/room/question/query?uid=%s&optType=1&queryType=2&pageSize=2&pageNo=1" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #运营后台问题切片####
+        #para_url = "/room/question/video/create"
+        #query_dict = "questionId=%s&startTime=60000&endTime=180000" % (question_id)
+        #tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        #time.sleep(3)
+        #tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        #res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 200)
+        #self.assert_equal(res['h']['msg'], '操作成功')
+        #startTime = res['b']['startTime']
+        #endTime = res['b']['endTime']
+        #videoUrl = res['b']['videoUrl']
+        #运营后台保存问题切片
+        #para_url = "/room/question/video/save"
+        #query_dict = "questionId=%s&startTime=%s&endTime=%s&videoUrl=%s" % (question_id, startTime, endTime, videoUrl)
+        #tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        #res = json.loads(tmp)
+        #self.assert_equal(res['h']['code'], 200)
+        #self.assert_equal(res['h']['msg'], '操作成功')
+        #查询问题详细信息
+        token = self.get_token()
+        para_url = "/room/question/info?questionId=%s" % (question_id)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #创建分享
+        para_url = "/room/share/create"
+        query_dict = "goodsId=%s&shareChannel=2" % (question_id)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        share_id = res['b']['shareId']    
+        #微信分享成功回调
+        para_url = "/room/share/send/success"
+        query_dict = "shareId=%s" % (share_id)
+        tmp = self.send_request_post(query_dict,para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询分享信息
+        para_url = "/room/share/query?shareId=%s" % (share_id)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #创建分享-有分享源
+        para_url = "/room/share/create"
+        query_dict = "goodsId=%s&shareChannel=1&sourceId=%s" % (question_id, share_id)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        share_url = res['b']['content']['weibo']['linkUrl']
+        #微博分享回调
+        para_url = "/linkcard/callback/share?url=%s" % (share_url)
+        tmp = self.send_request_get(para_url, flag = 2)
+        res = json.loads(tmp)
+        assert res['display_name']
+        assert res['summary']
+        assert res['object_type']
+        #查询单个直播间信息
+        para_url = "/room/queryById?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['roomId'], roomId)
+	#查询单个直播间信息for h5
+        para_url = "/room/queryByIdForH5?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['roomId'], roomId)
+	#查询单个直播间信息for login h5
+        para_url = "/room/queryByIdForLoginedH5?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['roomId'], roomId)
+	#观众结束直播
+        para_url = "/room/audienceEnd?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['roomId'], roomId)
+	#主播上传图片
+	para_url = "/room/uploadBackgroundPics"
+        query_dict = "roomId=%s" % (roomId)
+	pic = 'picFiles=@%s' % (global_image)
+        tmp = self.send_request_post_image(query_dict, para_url, token = token, pic = pic)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#获取图片
+	para_url = "/room/queryBackgroundPics?roomId=%s" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	image_url = res['b']['picUrls'][0]	
+	arr = image_url.split('/')
+	image_name = arr[3]
+	#删除图片
+	para_url = "/room/deleteBackgroundPics"
+        query_dict = "roomId=%s&picNames=%s" % (roomId, image_name)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#观看人数计数
+	para_url = "/room/countwatcher"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#点赞计数
+        para_url = "/room/countlikes"
+        query_dict = "roomId=%s&likes=100" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#写入直播间消息-图片消息
+	para_url = "/message/writeMsg"
+        query_dict = "roomId=%s&bizType=1&content={\"picUrl\":\"17244918620181481513430270.png\"}" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	time.sleep(2)
+        #查询直播间消息
+	para_url = "/message/readMsg?roomId=%s&bizType=3&cursor=0" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['content'], '{\"picUrl\":\"17244918620181481513430270.png\"}')
+        #批量查询直播间消息
+        para_url = "/message/latest/batch/get?roomId=%s&bizType=4&pageSize=30" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播间最新一条消息
+        para_url = "/message/latest/get?roomId=%s&bizType=3" % (roomId)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	self.assert_equal(res['b']['data'][0]['content'], '{\"picUrl\":\"17244918620181481513430270.png\"}')
+        #送礼物
+	para_url = "/order/create"
+	uid = self.get_uid()
+	goodsId = self.get_goodsId()
+	token = self.get_token()
+        query_dict = "roomId=%s&receiveId=%s&orderType=2&goodsId=%s" % (roomId, uid, goodsId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #删除直播间
+        token = self.get_token()
+        para_url = "/room/delete"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_user_oms(self):
+        uid = self.get_uid()
+        #根据uid查询用户信息
+        para_url = "/user/get?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #根据昵称查询用户信息
+        nickname = self.get_name()
+        para_url = "/user/get?nickname=%s" % (nickname)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #根据电话号码查询用户信息
+        cellphone = 18911411029
+        para_url = "/user/get?cellphone=%s" % (cellphone)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #修改用户信息，修改简介和昵称
+        para_url = "/user/modify"
+        query_dict = "uid=%s&nickname=nickname_again_mdy&introduction=123qweasd_my_introduction" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #添加用户标签
+        para_url = "/user/tags/update"
+        query_dict = "uid=%s&tags=0,4,7,9" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询用户标签
+        para_url = "/user/tags/get?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #根据主播标签批量更新直播间标签
+        para_url = "/room/tags/update/batch"
+        query_dict = "uids=%s" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_goods_create(self):
+	#创建商品
+	para_url = "/goods/create"
+	token = self.get_token()
+	rand = random.uniform(10, 20)
+        query_dict = "name=name%s&typeId=2&price=0.2&sizeType=1" % (rand)
+        tmp = self.send_request_post(query_dict, para_url, token = token, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	goodId = res['b']['id']
+	#修改商品
+	para_url = "/goods/update"
+	query_dict = "typeId=2&id=%s&price=11&sizeType=1" % (goodId)
+	tmp = self.send_request_post(query_dict, para_url, token = token, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#查询商品列表
+	para_url = "/goods/list?typeId=2"
+	tmp = self.send_request_get(para_url, token = token, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	
+    def test_adv_openscreen(self):
+        #添加开屏广告
+        para_url = "/adv/addOpenScreen"
+        query_dict = "advId=2&linkType=2&sort=1&link=http://baidu.com&startTime=2017-06-19%2010:15:09&endTime=2018-09-26%2021:20:09&params=%7b%22uid%22:%2212345%22%7d"
+        pic = "picUrls=@%s" % (global_openscreen)
+        tmp = self.send_request_post_image(query_dict, para_url, flag = 1, pic = pic)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        adv_adid = res['b'][0]['id']
+        #更新开屏广告
+        para_url = "/adv/updAdvForOpenScreen"
+        query_dict = "advId=2&id=%s&" % (adv_adid) + "startTime=2017-06-20%2010:15:09&endTime=2018-09-26%2021:20:09&params=%7b%22uid%22:%2212345%22%7d"
+        pic = "picUrls=@%s" % (global_openscreen)
+        tmp = self.send_request_post_image(query_dict, para_url, flag = 1, pic = pic)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询开屏广告-portal
+        ua = '10.3.1&imei=ff68355f59ca6036c4fb4ba6f486671acbd35467&m=iPhone8,1&s=750x1334&c=1&vc=42&vn=2.0.0&n=uxlive&rid=98D88074-4CA8-4377-B7D8-06BDFAD8A9C61497863988803'
+        para_url = "/room/openscreen"
+        tmp = self.send_request_get(para_url, ua = ua)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_adv_addPosition(self):
+	para_url = "/adv/delPosition"
+        query_dict = "advId=161"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+	#添加广告位
+	para_url = "/adv/addPosition"
+	query_dict = "remark=testaddpositon&position=161"
+	tmp = self.send_request_post(query_dict, para_url, flag = 1)
+	res = json.loads(tmp)
+	self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        advid = res['b']['advId']
+	#修改广告位
+	para_url = "/adv/updPosition"
+        query_dict = "advId=%s&remark=testupdatepositon" % (advid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#查询所有广告位
+        para_url = "/adv/queryPositions"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['list'][-1]['advId'], advid)
+        self.assert_equal(res['b']['list'][-1]['remark'], 'testupdatepositon')
+	#在广告位上添加
+	para_url = "/adv/addAdv"
+        query_dict = "advId=%s&linkType=1&sort=1&" % (advid) + "link=http://baidu.com&startTime=2016-09-26%2020:15:09&endTime=2016-09-26%2021:20:09&params=%7b%22uid%22:%2212345%22%7d" 
+	pic = "picUrl=@%s" % (global_image)
+        tmp = self.send_request_post_image(query_dict, para_url, flag = 1, pic = pic)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	advadid = res['b']['id']
+	#在广告位上修改
+	para_url = "/adv/updAdv"
+        query_dict = "advId=%s&id=%s&linkType=2" % (advid, advadid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#查询广告位内容
+        para_url = "/adv/queryAdvs?advId=%s" % (advid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['list'][-1]['advId'], advid)
+        #self.assert_equal(res['b']['list'][-1]['id'], advadid)
+        self.assert_equal(res['b']['list'][-1]['linkType'], 2)
+	#在广告位上删除
+	para_url = "/adv/delAdv"
+        query_dict = "advId=%s&id=%s" % (advid, advadid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #删除广告位
+        para_url = "/adv/delPosition"
+        query_dict = "advId=%s" % (advid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_room_globalTimeline_oms(self):
+        #查询直播间
+	para_url = "/room/globalTimeline"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#创建直播间
+        para_url = "/room/create"
+        uid = self.get_uid()
+        token = self.get_token()
+        self.end_living(uid, token)
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        roomId = res['b']['roomId']
+	para_url = "/room/start"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        #强制结束直播
+        para_url = "/room/forceEnd"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#删除直播间
+	para_url = "/room/delete"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询直播间真实人数-tengxun+weibo
+        para_url = "/room/count/real/all"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_category_oms_api(self):
+        uid = self.get_uid()
+        #创建免费栏目
+        para_url = "/category/create"
+        pic = 'coverPic=@%s' % (global_image)
+        rand = random.randint(1, 1000)
+        rand1 = random.uniform(10, 20)
+        query_dict = "title=免费栏目%s&createUid=%s&introduce=栏目简介：我就是我%s&notes=栏目须知：本栏目郑重承诺%s&categoryType=2&recommendInfo=栏目推荐%s&price=0" % (rand, uid, rand1, rand1, rand1)
+        tmp = self.send_request_post_image(query_dict, para_url, pic = pic, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        categoryId_free = res['b']['categoryId']
+        #创建付费栏目
+        para_url = "/category/create"
+        pic = 'coverPic=@%s' % (global_image)
+        rand = random.randint(1, 1000)
+        rand1 = random.uniform(10, 20)
+        query_dict = "title=11付费栏目%s&createUid=%s&introduce=栏目简介：我就是我%s&notes=栏目须知：本栏目郑重承诺%s&categoryType=1&recommendInfo=栏目推荐%s&price=500&vipPrice=200&beneficiary=%s&expectedShowCount=10" % (rand, uid, rand1, rand1, rand1, uid)
+        tmp = self.send_request_post_image(query_dict, para_url, pic = pic, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        categoryId_fee = res['b']['categoryId']
+        #编辑更新栏目信息
+        para_url = "/category/update"
+        query_dict = "categoryId=%s&vipPrice=100" % (categoryId_fee)
+        tmp = self.send_request_post(query_dict, para_url, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #添加栏目会员
+        uid_vip = self.get_uid(mobile = 13612120001)
+        para_url = "/category/vip/set"
+        query_dict = "categoryId=%s&vips=%s" % (categoryId_fee, uid_vip)
+        tmp = self.send_request_post(query_dict, para_url, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询栏目会员
+        para_url = "/category/vip/list?categoryId=%s" % (categoryId_fee)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['vip'], uid_vip)
+        #OMS查询栏目列表
+        para_url = "/category/list"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS查询栏目信息
+        para_url = "/category/query?categoryId=%s" % (categoryId_free)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['categoryId'],categoryId_free)
+        #OMS添加嘉宾到栏目
+        para_url = "/category/guest/join"
+        query_dict = "categoryId=%s&uid=%s" % (categoryId_free, uid) 
+        query_dict1 = "categoryId=%s&uid=%s" % (categoryId_fee, uid)
+        tmp = self.send_request_post(query_dict, para_url, flag =1)
+        tmp1 = self.send_request_post(query_dict1, para_url, flag =1)
+        res = json.loads(tmp)
+        res1 = json.loads(tmp1)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res1['h']['code'], 200)
+        self.assert_equal(res1['h']['msg'], '操作成功')
+        #创建直播间
+        token = self.get_token()
+        para_url = "/room/create"
+        self.end_living(uid, token)
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        roomId = res['b']['roomId']
+        tmp1 = self.send_request_post(query_dict, para_url, token = token)
+        res1 = json.loads(tmp1)
+        self.assert_equal(res1['h']['code'], 200)
+        self.assert_equal(res1['h']['msg'], '操作成功')
+        roomId1 = res1['b']['roomId']
+        #OMS添加直播间到栏目
+        para_url = "/category/room/add"
+        query_dict = "categoryId=%s&roomId=%s" % (categoryId_free, roomId)
+        query_dict1 = "categoryId=%s&roomId=%s" % (categoryId_fee, roomId1)
+        tmp = self.send_request_post(query_dict, para_url, flag =1)
+        tmp1 = self.send_request_post(query_dict1, para_url, flag =1)
+        res = json.loads(tmp)
+        res1 = json.loads(tmp1)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res1['h']['code'], 200)
+        self.assert_equal(res1['h']['msg'], '操作成功')
+        #查询个人栏目列表
+        para_url = "/category/personal/list?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询栏目节目列表
+        para_url = "/category/programList?categoryId=%s" % (categoryId_free)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['roomId'], roomId)
+        #查询栏目嘉宾列表
+        para_url = "/category/guestList?categoryId=%s" % (categoryId_free)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']), uid)
+        #客户端查询栏目基本信息
+        para_url = "/category/queryById?categoryId=%s" % (categoryId_free)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['categoryId'], categoryId_free)
+        #客户端查询栏目列表
+        para_url = "/category/list?cursor=0&pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #客户端查询个人栏目列表
+        para_url = "/category/personalList?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #客户端查询栏目节目列表－按照添加时间正序
+        para_url = "/category/programList?categoryId=%s&pageSize=3&pageNo=1" % (categoryId_free)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['roomId'], roomId)
+        #客户端查询栏目节目列表-按照添加时间正序
+        para_url = "/category/program/payDisplay?categoryId=%s&pageSize=3&pageNo=1" % (categoryId_fee)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['roomId'], roomId1)
+        #查询精品栏目页的广告
+        para_url = "/category/advList"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询栏目基本信息-H5
+        para_url = "/category/h5/queryById?categoryId=%s" % (categoryId_free)
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['categoryId'], categoryId_free)
+        #查询栏目列表-H5
+        para_url = "/category/h5/list"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询个人栏目列表-H5
+        para_url = "/category/h5/personalList?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询栏目节目列表-H5
+        para_url = "/category/h5/programList?categoryId=%s&pageSize=3&pageNo=1" % (categoryId_free)
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['roomId'], roomId)
+        #查询精品栏目页的广告-H5
+        para_url = "/category/h5/advList"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #栏目中删除嘉宾
+        para_url = "/category/guest/quit"
+        query_dict = "categoryId=%s&uid=%s" % (categoryId_free, uid)
+        tmp = self.send_request_post(query_dict, para_url, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #栏目中删除直播间
+        para_url = "/category/room/delete"
+        query_dict = "categoryId=%s&roomId=%s" % (categoryId_free, roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的购买－直播间
+        para_url = "/room/paidList?pageSize=2&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的购买－栏目
+        para_url = "/category/paidList?pageSize=2&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #删除栏目
+        para_url = "/category/delete"
+        query_dict = "categoryId=%s" % (categoryId_free)
+        tmp = self.send_request_post(query_dict, para_url, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_recommend_anchor(self):
+        token = self.get_token()
+        uid = self.get_uid(mobile = 12512120010)
+        #OMS查询推荐分类
+        para_url = "/userrelation/recommend/category/get"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #客户端查询推荐分类
+        para_url = "/userrelation/recommend/category/get"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #推荐分类添加主播
+        para_url = "/userrelation/recommend/user/add"
+        query_dict = "categoryTag=1&uid=%s" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS查询推荐分类和主播
+        para_url = "/userrelation/recommend/user/get"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #客户端批量关注推荐用户
+        para_url = "/userrelation/recommend/user/follow"
+        query_dict = "categoryTag=0,1,2"
+        query_dict1 = "categoryTag="
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        tmp1 = self.send_request_post(query_dict1, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS推荐分类删除主播
+        para_url = "/userrelation/recommend/user/del"
+        query_dict = "categoryTag=1&uid=%s" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_event_oms_api(self):
+        #先结束全部有效期内的运营活动
+        self.end_all_events()
+        #OMS添加个人运营活动
+        startTime = self.get_datetime(time_dur = 1)
+        endTime = self.get_datetime(time_dur = 24)
+        para_url = "/room/event/personal/add"
+        query_dict = "link=http://www.baidu.com&linkType=0&location=1&startTime=%s&endTime=%s" % (startTime, endTime)
+        pic = "picUrl=@%s" % (global_image)
+        tmp = self.send_request_post_image(query_dict, para_url, pic = pic,  flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #获取全部运营活动-个人活动的eventId
+        para_url = "/room/event/all/get"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b'][0]['status'], 0)
+        personalId = res['b'][0]['eventId']
+        #OMS添加全站运营活动
+        para_url = "/room/event/global/add"
+        query_dict = "link=http://www.baidu.com&linkType=0&location=1&startTime=%s&endTime=%s" % (startTime, endTime)
+        pic = "picUrl=@%s" % (global_image)
+        tmp = self.send_request_post_image(query_dict, para_url, pic = pic,  flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS更新活动
+        link = "uxinlive://www.baidu.com"
+        para_url = "/room/event/update"
+        query_dict = "eventId=%s&link=%s&linkType=1" % (personalId, link)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #给部分运营活动添加主播
+        uid = self.get_uid()
+        para_url = "/room/event/personal/relation/add"
+        query_dict = "eventId=%s&uid=%s" % (personalId, uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #强制开始活动
+        para_url = "/room/event/start"
+        query_dict = "eventId=%s" % (personalId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS获取个人参与的运营活动－全站和部分聚合
+        para_url = "/room/event/list?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b'][0]['status'], 1)
+        self.assert_equal(res['b'][0]['eventId'], personalId)
+        #portal获取主播参与的运营活动
+        token = self.get_token()
+        para_url = "/room/eventList?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['eventId']), personalId)
+        #获取部分运营活动参与的主播
+        para_url = "/room/user/event/personal/get?eventId=%s" % (personalId)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b'][0]['id']), uid)
+        #获取主播参与的部分运营活动
+        para_url = "/room/event/joined/get?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b'][0]['eventId'], personalId)
+        #部分运营活动删除主播
+        para_url = "/room/event/personal/relation/delete"
+        query_dict = "eventId=%s&uid=%s" % (personalId, uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #强制结束活动
+        para_url = "/room/event/end"
+        query_dict = "eventId=%s" % (personalId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_music_oms_api(self):
+        #OMS添加音乐
+        para_url = "/adv/background/music/add"
+        query_dict = ""
+        audioFiles = 'audioFiles=@%s' % (global_audio)
+        tmp = self.send_request_post_image(query_dict, para_url, pic = audioFiles, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS获取音乐列表
+        para_url = "/adv/background/music/list?pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        music_id = res['b']['data'][0]['id']
+        #portal获取音乐列表
+        token = self.get_token()
+        para_url = "/room/background/music/list?pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS删除音乐
+        para_url = "/adv/background/music/remove"
+        query_dict = 'id=%s' % (music_id)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功') 
+
+    def test_manager_assist(self):
+        #OMS添加主播管理员
+        anchor_uid = self.get_uid()
+        manager_uid = self.get_uid(mobile = 12612120001)
+        para_url = "/user/assist/manager/add"
+        query_dict = 'anchorUid=%s&managerUid=%s' % (anchor_uid, manager_uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS查询主播管理员列表
+        para_url = "/user/assist/manager/list?anchorUid=%s" % (anchor_uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']), manager_uid)
+        #OMS移除主播管理员
+        para_url = "/user/assist/manager/remove"
+        query_dict = 'anchorUid=%s&managerUid=%s' % (anchor_uid, manager_uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播自己添加管理员
+        token = self.get_token()
+        para_url = "/user/assist/manager/add"
+        query_dict = 'managerUid=%s' % (manager_uid)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #主播查询主播管理员列表
+        para_url = "/user/assist/manager/list"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']), manager_uid)
+        #主播创建一个直播间
+        self.end_living(anchor_uid, token)
+        para_url = "/room/create"
+        query_dict = ''
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        roomId = res['b']['roomId']
+        #查询用户是否为主播管理员
+        token_manager = self.get_token(mobile = 12612120001)
+        para_url = "/user/check/assist/manager?roomId=%s&anchorUid=%s" % (roomId, anchor_uid)
+        tmp = self.send_request_get(para_url, token = token_manager)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isManager'], True)
+        #主播自己删除管理员
+        para_url = "/user/assist/manager/remove"
+        query_dict = 'managerUid=%s' % (manager_uid)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询用户是否为主播管理员
+        para_url = "/user/check/assist/manager?roomId=%s&anchorUid=%s" % (roomId, anchor_uid)
+        tmp = self.send_request_get(para_url, token = token_manager)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isManager'], False)
+
+    def test_inviteCode_setAnchor(self):
+	#更新用户为主播
+	anchor_name = self.get_name()
+	token = self.get_token()
+	para_url = "/inviteCode/setAnchor?nicknames=%s" % (anchor_name)
+	tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#查询入住主播信息
+	para_url = "/user/queryAnchors"
+	query_dict = ''
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#发送邀请码
+	para_url = "/inviteCode/invite?nicknames=%s&inviteCodeNums=4" % (anchor_name)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#查询邀请码
+	para_url = "/user/queryInviteCodes"
+        query_dict = ''
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	invite_code = res['b']['data'][-1]['inviteCode']
+	#校验邀请码
+	para_url = "/user/checkInviteCode"
+	token = self.get_token(mobile = 18512069263)
+        query_dict = 'inviteCode=%s' % (invite_code)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#统计邀请码使用情况
+	para_url = "/inviteCode/queryInviteCodes"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询用户的邀请码使用情况
+        uid = self.get_uid()
+        para_url = "/inviteCode/query?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #取消用户为主播
+        uid = self.get_uid()
+        para_url = "/user/anchor/cancel"
+        query_dict = 'uid=%s' % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #更新用户为主播
+        anchor_name = self.get_name()
+        token = self.get_token()
+        para_url = "/inviteCode/setAnchor?nicknames=%s" % (anchor_name)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_user_vip(self):
+        #大V认证
+        uid = self.get_uid()
+        vipInfo = "认证相声演员"
+        para_url = "/user/vip/add"
+        query_dict = 'uid=%s&vipInfo=%s' % (uid, vipInfo)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询主播信息，验证VIP
+        token = self.get_token()
+        para_url = "/user/queryUserInfo"
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isVip'], 1)
+        #取消大V认证
+        para_url = "/user/vip/cancel"
+        query_dict = 'uid=%s' % (uid)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询主播信息，验证VIP
+        token = self.get_token()
+        para_url = "/user/queryUserInfo"
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['isVip'], 0)
+
+    def test_version_update_hotfix(self): 
+	#版本更新
+	para_url = "/version/update"
+        token = self.get_token(mobile = 18512069263)
+        query_dict = 'clientVersion=1'
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #支持热修复接口
+        para_url = "/version/hotfix?patchVersion=1&tinkerId=2.0.0"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_upload_token(self):
+        #申请上传凭证
+        para_url = "/upload/token"
+        token = self.get_token(mobile = 18512069263)
+        query_dict = 'type=3'
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_fee_whitelist(self):
+        uid = self.get_uid()
+        token = self.get_token()
+        #创建付费栏目
+        para_url = "/category/create"
+        pic = 'coverPic=@%s' % (global_image)
+        rand = random.randint(1, 1000)
+        rand1 = random.uniform(10, 20)
+        query_dict = "title=付费i栏目%s&createUid=%s&introduce=栏目简介：我就是我%s&notes=栏目须知：本栏目郑重承诺%s&categoryType=1&recommendInfo=栏目推荐%s&price=250&beneficiary=%s&expectedShowCount=10" % (rand, uid, rand1, rand1, rand1, uid)
+        tmp = self.send_request_post_image(query_dict, para_url, pic = pic, flag =1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        categoryId_fee = res['b']['categoryId']
+        #创建付费直播间
+        para_url = "/room/create"
+        self.end_living(uid, token)
+        query_dict = "uid=%s&title=my_paied_room&price=2&introduce=12345qwerty_room_introduction" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        roomId_fee = res['b']['roomId']
+        #付费直播间添加白名单
+        uid_white = self.get_uid(mobile = 12912120001)
+        token_white = self.get_token(mobile = 12912120001)
+        para_url = "/room/pay/whitelist/add"
+        query_dict = "roomId=%s&uid=%s" % (roomId_fee, uid_white)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询付费直播间白名单列表
+        para_url = "/room/pay/whitelist?roomId=%s&pageSize=2&pageNo=1" % (roomId_fee)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']), uid_white)
+        #白名单用户查询付费直播间返回true
+        para_url = "/room/queryById?roomId=%s" % (roomId_fee)
+        tmp = self.send_request_get(para_url, token = token_white)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['paid'], True)
+        #付费直播间删除白名单
+        para_url = "/room/pay/whitelist/remove"
+        query_dict = "roomId=%s&uid=%s" % (roomId_fee, uid_white)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #白名单被删除用户查询付费直播间返回false
+        para_url = "/room/queryById?roomId=%s" % (roomId_fee)
+        tmp = self.send_request_get(para_url, token = token_white)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['paid'], False)
+        #付费栏目添加白名单
+        para_url = "/category/pay/whitelist/add"
+        query_dict = "categoryId=%s&uid=%s" % (categoryId_fee, uid_white)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询付费栏目白名单列表
+        para_url = "/category/pay/whitelist?categoryId=%s&pageSize=2&pageNo=1" % (categoryId_fee)
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['data'][0]['id']), uid_white)
+        #白名单用户查询付费栏目返回true
+        para_url = "/category/queryById?categoryId=%s" % (categoryId_fee)
+        tmp = self.send_request_get(para_url, token = token_white)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['hasBuy'], True)
+        #付费栏目删除白名单
+        para_url = "/category/pay/whitelist/remove"
+        query_dict = "categoryId=%s&uid=%s" % (categoryId_fee, uid_white)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #白名单被删除用户查询付费栏目返回false
+        para_url = "/category/queryById?categoryId=%s" % (categoryId_fee)
+        tmp = self.send_request_get(para_url, token = token_white)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['hasBuy'], False)
+        #手动移除购买UID-默认直播间
+        para_url = "/order/paylist/remove"
+        query_dict = "goodsId=%s&uid=%s" % (roomId_fee, uid_white)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #手动移除购买UID-栏目
+        para_url = "/order/paylist/remove"
+        query_dict = "goodsType=1&goodsId=%s&uid=%s" % (categoryId_fee, uid_white)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+    
+    def test_SDK_activity(self):
+        #删除缓存，确保本次UID可上报成功
+        uid = self.get_uid()
+        redis_del = "del user_activity_present_%s" % (uid)
+        self.redis_execute(redis_del)
+        #获取SDK赠送红豆活动文案
+        token = self.get_token()    
+        para_url = "/user/sdk/present/activity"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #SDK上传资格UID
+        para_url = "/user/sdk/present/user/upload"
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #app获赠红豆文案
+        para_url = "/user/present/activity"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_pay_refund(self):
+        #创建付费房间
+        para_url = "/room/create"
+        uid = self.get_uid()
+        token = self.get_token()
+        self.end_living(uid, token)
+        query_dict = "uid=%s&title=my_paied_room&price=2&introduce=12345qwerty_room_introduction" % (uid)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        roomId = res['b']['roomId']
+        #运营后台批量创建付费房间的订单
+        para_url = "/order/batch/create"
+        query_dict = "orderType=3&payChannel=10&pageNo=1&pageSize=3&roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+    
+    def test_daily_specials(self):
+        #删除缓存中的每日精选
+        keyword = "del room_z_daily_specials"
+        self.redis_execute(keyword)
+        #创建一个直播间
+        uid = self.get_uid()
+        token = self.get_token()
+        para_url = "/room/create"
+        self.end_living(uid, token)
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        roomId = res['b']['roomId']
+        #将该直播间变为回放直播间，直接room/end可能会被删除
+        mysql_update = "update room_info set status=10,update_time=unix_timestamp()*1000 where room_id=%s" % (roomId)
+        redis_del = "del room_item__%s" % (roomId)
+        self.mysql_execute(mysql_update)
+        time.sleep(1)
+        self.redis_execute(redis_del)
+        time.sleep(1)
+        #添加每日精选
+        #recommendDate = self.get_datetime(time_dur = -29)
+        recommendDate = self.get_date_YMD(-1)
+        para_url = "/room/daily/specials/add"
+        query_dict = "roomId=%s&recommendDate=%s" % (roomId, recommendDate)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS查询每日精选
+        para_url = "/room/daily/specials/get?pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['roomResq']['roomId'], roomId)
+        #portal查询每日精选
+        para_url = "/room/daily/specials/get?pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['roomResq']['roomId'], roomId)
+	#h5查询每日精选
+	para_url = "/room/daily/specials/get/h5?pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['roomResq']['roomId'], roomId)
+        #移除每日精选
+        para_url = "/room/daily/specials/delete"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_closure_dev(self):
+        #OMS封禁设备
+        IMEI = "b96c4023094135351e87983f57a91d0650aae56z"
+        para_url = "/user/closure/dev"
+        query_dict = "imei=%s&devType=ipadMiNi&remark=测试封禁设备" % (IMEI)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS查询封禁列表
+        para_url = "/user/closure/list"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['imei'], IMEI)
+        #OMS删除封禁设备
+        para_url = "/user/closure/cancel"
+        query_dict = "imei=%s" % (IMEI)
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_wallet_diamond_exchage(self):
+	uid = self.get_uid(mobile=18512069260)
+	sql = "update account_balance set gold=1000 , diamond=2000 where uid=%s" % (uid) 
+	print sql
+	self.mysql_execute(sql)
+	redis_key = "del balance_item_%s" % (uid)
+	self.redis_execute(redis_key)
+        token = self.get_token(mobile=18512069260)
+	#获取账户余额
+	token = self.get_token(mobile=18512069260)
+        para_url = "/account/exchange/balance"
+        tmp = self.send_request_get(para_url, token = token)
+	res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#添加钻石兑换红豆套餐
+        mobile = random.randint(10000000000,19999999999)
+	query_dict = "price=100&typeId=5&golds=70&&sizeType=1&name=nametaocan%s" % (mobile)
+	para_url = "/goods/create"
+	tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	goods_id = res['b']['id']
+	#钻石兑换红豆
+	token = self.get_token(mobile=18512069260)
+        para_url = "/wallet/diamond/exchange"
+        query_dict = "id=%s" % (goods_id)
+	tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#获取钻石兑换红豆记录
+	token = self.get_token(mobile=18512069260)
+        para_url = "/wallet/exchange/list"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_withdraw_wallet(self):
+        uid = self.get_uid()
+        redis_delete_freezed = "order_freezed_money_%s" % (uid)
+        self.redis_execute(redis_delete_freezed)
+        self.user_modify_account(uid)
+        time.sleep(1)
+        #提交用户账户信息
+        token = self.get_token()
+        account = "xjg_ccnu@163.com"
+        username = "王昭君"
+        identityCard = "1678349127902074"
+        cellphone = "18911411029"
+        query_dict = "accountType=1&account=%s&username=%s&identityCard=%s&cellphone=%s" % (account, username, identityCard, cellphone)
+        para_url = "/wallet/withdraw/account/submit"
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询我的收益详情
+        para_url = "/wallet/detail"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询用户账户信息
+        para_url = "/wallet/withdraw/account/info"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(str(res['b']['uid']), uid)
+        self.assert_equal(res['b']['account'], account)
+        self.assert_equal(res['b']['username'], username)
+        self.assert_equal(res['b']['identityCard'], identityCard)
+        #获取实际可提现金额
+        para_url = "/wallet/withdraw/amount?uid=%s" % (uid)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['withdrawStatus'], 1)
+        withdrawNo = res['b']['withdrawNo']
+        #创建提现申请
+        query_dict ="uid=%s&withdrawNo=%s" % (uid, withdrawNo)
+        para_url ="/wallet/withdraw/apply"
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询提现记录
+        para_url = "/wallet/withdraw/list"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['withdrawStatus'], 2)
+        #查询单个提现记录详情
+        para_url = "/wallet/withdraw/query?withdrawNo=%s" % (withdrawNo)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['withdrawStatus'], 2)
+        #更新提现状态-提现中
+        status = 4
+        query_dict ="uid=%s&withdrawNo=%s&status=%s&operatorId=测试账号&remark=测试更新状态为提现中" % (uid, withdrawNo, status)
+        para_url ="/withdraw/status/update"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        #查询单个提现记录详情
+        para_url = "/wallet/withdraw/query?withdrawNo=%s" % (withdrawNo)
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['withdrawStatus'], 4)
+        #更新提现状态-提现失败
+        status = 6
+        query_dict ="uid=%s&withdrawNo=%s&status=%s&operatorId=测试账号&remark=测试更新状态为提现失败" % (uid, withdrawNo, status)
+        para_url ="/withdraw/status/update"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #更新提现状态-提现成功
+        status = 5
+        query_dict ="uid=%s&withdrawNo=%s&status=%s&operatorId=测试账号&remark=测试更新状态为提现成功" % (uid, withdrawNo, status)
+        para_url ="/withdraw/status/update"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_set_level_privilege(self):
+	#设置用户等级特权
+	query_dict =""
+	para_url = "/privilege/set4levels?startLevel=1&endLevel=9&privilege=%5b%7b%22type%22%3a1%2c%22displayPosition%22%3a2%2c%22icon%22%3a%22icon%22%2c%22message%22%3a%22%e8%bf%99%e6%98%af%e4%b8%80%e8%87%b3%e4%b9%9d%e7%ba%a7%e7%9a%84%e6%b6%88%e6%81%af%22%2c%22url%22%3a%22http%3a%2f%2fwww.baidu.com%22%2c%22desc%22%3a%22%e8%bf%99%e6%98%af%e4%b8%80%e8%87%b3%e4%b9%9d%e7%ba%a7%e7%9a%84%e6%8f%8f%e8%bf%b0%22%7d%5d"
+	tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#获取用户等级特权
+	para_url = "/privilege/list"
+	tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#删除等级特权
+	query_dict = "startLevel=%s&endLevel=%s" % (1, 9)
+	para_url = "/privilege/clear4levels"
+	tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#除等级特权
+	query_dict = "startLevel=%s&endLevel=%s" % (1, 9)
+        para_url = "/privilege/level/remove"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#设置用户经验
+	uid = self.get_uid()
+	query_dict = "uid=%s&exp=%s" % (uid, 50)
+        para_url = "/user/update/exp"
+	#获取用户等级经验
+	token = self.get_token()
+	para_url = "/user/level/info"
+	tmp = self.send_request_get(para_url, token = token)
+	res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_create_room_obs(self):
+        #创建OBS推流的虚拟直播间
+        token = self.get_token()
+        query_dict = "title=我是OMS创建的虚拟直播间&introduce=我是OMS创建的虚拟直播间&needSendWeibo=0"
+        para_url = "/room/obs/create"
+        tmp = self.send_request_post(query_dict, para_url, token = token, client = 14)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['funcType'], 1)
+        roomId = res['b']['roomId']
+        #查询用户当前正在直播中的直播间-obs
+        para_url = "/room/obs/living/info"
+        tmp = self.send_request_get(para_url, token = token, client = 14)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['roomId'], roomId)
+        self.assert_equal(res['b']['funcType'], 1)
+        #结束OBS推流的虚拟直播间
+        query_dict = "roomId=%s" % (roomId)
+        para_url = "/room/obs/end"
+        tmp = self.send_request_post(query_dict, para_url, token = token, client = 14)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_create_room_oms(self):
+        #OMS创建音频回放直播间
+        uid = self.get_uid()
+        token = self.get_token()
+        audioFileUrl = 'http://hrslive-keane.oss-cn-hangzhou.aliyuncs.com/907908309158199299.mp3'
+        query_dict = "uid=%s&title=音频创建回放直播间&introduce=直播间简介啊啊啊&price=0&costTime=5760000&audioFileUrl=%s" % (uid, audioFileUrl)
+        pic = 'coverFile=@%s' % (global_image)
+        para_url = "/room/playback/create"
+        tmp = self.send_request_post_image(query_dict, para_url, flag = 1, pic = pic)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #OMS创建音频预告直播间
+        self.end_living(uid, token)
+        liveStartTime = self.get_datetime(time_dur = 1)
+        query_dict = "uid=%s&title=OMS创建预告直播间&introduce=预告直播间简介啊啊啊&price=0&communicateMaxDuration=0&communicateMinAmount=0&liveStartTime=%s" % (uid, liveStartTime)
+        pic = 'coverFile=@%s' % (global_image)
+        para_url = "/room/preview/create"
+        self.end_living(uid, token)
+        tmp = self.send_request_post_image(query_dict, para_url, flag = 1, pic = pic)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_sys_Tag(self):
+        #移除sys标签Tag
+        tagId = 100
+        name = "更精彩"
+        query_dict = "tagId=%s" % (tagId)
+        para_url = "/sys/config/roomTag/remove"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #添加sys标签Tag
+        query_dict = "id=%s&name=%s&index=12" % (tagId, name)
+        para_url = "/sys/config/roomTag/add"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询sys标签Tag
+        para_url = "/sys/config/roomTag/list"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #更新sys标签Tag
+        query_dict = "oldTagId=%s&id=%s&name=%s&index=13" % (tagId, tagId, name)
+        para_url = "/sys/config/roomTag/update"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_weight_style(self):
+        #移除权重样式对应关系
+        weightId = 10
+        desc = "精选"
+        query_dict = "weight=%s" % (weightId)
+        para_url = "/sys/config/weight/style/mapping/remove"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #添加权重样式对应关系
+        query_dict = "weight=%s&style=1&desc=%s" % (weightId, desc)
+        para_url = "/sys/config/weight/style/mapping/add"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #获取权重样式对应关系
+        para_url = "/sys/config/weight/style/mapping/list"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+ 
+    def test_big_order(self):
+        #获取大额充值套餐
+        big_goodsId = self.add_big_goods_if_not()
+        #创建大额充值订单
+        uid = self.get_uid()
+        query_dict = "receiveId=%s&orderType=11&goodsId=%s&quantity=3&returnUrl=http://www.baidu.com&remark=测试大额代充&optUid=%s" % (uid, big_goodsId, uid)
+        para_url = "/order/recharge/create"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询大额充值订单
+        para_url = "/order/recharge/list?pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['orderInfo']['status'], 1)
+        orderNo = res['b']['data'][0]['orderNo']
+        #删除额充值订单
+        query_dict = "orderNo=%s" % (orderNo)
+        para_url = "/order/cancel"
+        tmp = self.send_request_post(query_dict, para_url, flag = 1)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        
+    def test_watch_history(self):
+        #创建直播间
+        uid = self.get_uid()
+        token = self.get_token()
+        para_url = "/room/create"
+        uid_audience = self.get_uid(mobile = 13612120001)
+        token_audience = self.get_token(mobile = 13612120001)
+        self.end_living(uid, token)
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        roomId = res['b']['roomId']
+        #开始直播
+        para_url = "/room/start"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #听众上报进入直播间观看
+        para_url = "/room/enter"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询用户观看历史列表
+        para_url = "/user/watch/history/list?pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(res['b']['data'][0]['roomResp']['roomId'], roomId)
+        self.assert_equal(str(res['b']['data'][0]['userResp']['id']), uid)
+        #删除一条观看记录
+        para_url = "/user/watch/history/del"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #听众上报进入直播间观看
+        para_url = "/room/enter"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #清空所有观看记录
+        para_url = "/user/watch/history/clear"
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询用户观看历史列表
+        para_url = "/user/watch/history/list?pageSize=3&pageNo=1"
+        tmp = self.send_request_get(para_url, token = token_audience)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        self.assert_equal(len(res['b']['data']), 0)
+        #结束直播
+        para_url = "/room/end"
+        query_dict = "roomId=%s" % (roomId)
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_user_check_in(self):
+        #清除签到缓存
+        uid = self.get_uid()
+        redis_delete_checkIn = "del user_check_in_%s" % (uid)
+        self.redis_execute(redis_delete_checkIn)
+        #用户当天签到
+        token = self.get_token()
+        para_url = "/user/checkIn"
+        query_dict = ""
+        tmp = self.send_request_post(query_dict, para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+        #查询用户签到信息
+        para_url = "/user/checkIn/info"
+        tmp = self.send_request_get(para_url, token = token)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+    def test_liveAnchorsRank_daily(self):
+	#获取日榜
+	para_url = "/liveAnchorsRank/daily"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+	#获取周榜
+        para_url = "/liveAnchorsRank/weekly"
+        tmp = self.send_request_get(para_url)
+        res = json.loads(tmp)
+        self.assert_equal(res['h']['code'], 200)
+        self.assert_equal(res['h']['msg'], '操作成功')
+
+if __name__=='__main__':
+    unittest.main()
